@@ -121,10 +121,16 @@
 
   async function startCamera() {
     startBtn.disabled = true;
-    message.textContent = '후면 카메라와 손 인식 모델을 준비하는 중…';
+    message.textContent = '후면 카메라를 여는 중…';
+    cameraLabel.textContent = '후면 카메라 연결 중';
     try {
       stopCamera();
-      await loadLandmarker();
+
+      // AI 모델보다 카메라를 먼저 시작해 영상부터 표시합니다.
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new Error('이 브라우저에서는 카메라 기능을 사용할 수 없습니다. HTTPS 주소의 최신 Chrome에서 열어주세요.');
+      }
+
       stream = await navigator.mediaDevices.getUserMedia({
         audio: false,
         video: {
@@ -133,25 +139,46 @@
           height: { ideal: 720 }
         }
       });
+
       video.srcObject = stream;
       await video.play();
+
       if (!video.videoWidth) {
         await new Promise((resolve, reject) => {
-          video.onloadedmetadata = resolve;
-          video.onerror = reject;
+          const onReady = () => {
+            cleanup();
+            resolve();
+          };
+          const onError = () => {
+            cleanup();
+            reject(new Error('카메라 영상 정보를 가져오지 못했습니다.'));
+          };
+          const cleanup = () => {
+            video.removeEventListener('loadedmetadata', onReady);
+            video.removeEventListener('error', onError);
+          };
+          video.addEventListener('loadedmetadata', onReady, { once: true });
+          video.addEventListener('error', onError, { once: true });
+          if (video.videoWidth) onReady();
         });
       }
+
       const track = stream.getVideoTracks()[0];
       const actualFacing = track.getSettings().facingMode;
       if (actualFacing && actualFacing !== 'environment') {
-        throw new Error('후면 카메라를 확인하지 못했습니다. 후면 카메라가 있는 기기에서 다시 시도해 주세요.');
+        throw new Error('후면 카메라를 확인하지 못했습니다. 기기의 후면 카메라 설정을 확인해 주세요.');
       }
+
       video.style.transform = 'none';
       drawCanvas.style.transform = 'none';
       overlayCanvas.style.transform = 'none';
       resize();
       placeholder.classList.add('hidden');
       cameraLabel.textContent = '후면 카메라 연결됨';
+      message.textContent = '카메라 연결 성공 · 손 인식 AI 모델을 불러오는 중…';
+
+      await loadLandmarker();
+
       message.textContent = '영상 ' + video.videoWidth + '×' + video.videoHeight + ' · 손 관절 추적 준비 완료';
       running = true;
       lastVideoTime = -1;
@@ -162,11 +189,15 @@
       placeholder.classList.remove('hidden');
       cameraLabel.textContent = '후면 카메라 시작 오류';
       const detail = err?.message ? ' (' + err.message + ')' : '';
-      message.textContent = err?.name === 'NotAllowedError'
-        ? '카메라 권한을 허용해 주세요.'
-        : err?.name === 'OverconstrainedError'
-          ? '후면 카메라를 찾지 못했습니다. 기기의 카메라 설정을 확인해 주세요.'
-          : '카메라 또는 손 인식 모델을 시작하지 못했습니다.' + detail;
+      if (err?.name === 'NotAllowedError' || err?.name === 'PermissionDeniedError') {
+        message.textContent = '카메라 권한이 거부됐습니다. Chrome 사이트 설정에서 카메라 권한을 허용해 주세요.';
+      } else if (err?.name === 'OverconstrainedError' || err?.name === 'NotFoundError') {
+        message.textContent = '후면 카메라를 찾지 못했습니다. 기기의 카메라를 확인해 주세요.';
+      } else if (err?.name === 'NotReadableError') {
+        message.textContent = '카메라가 다른 앱에서 사용 중일 수 있습니다. 다른 카메라 앱을 닫고 다시 시도해 주세요.';
+      } else {
+        message.textContent = '카메라 또는 손 인식 AI를 시작하지 못했습니다.' + detail;
+      }
     } finally {
       startBtn.disabled = false;
     }
