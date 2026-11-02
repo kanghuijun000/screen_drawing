@@ -38,6 +38,9 @@
   let currentStroke = null;
   let strokes = [];
   let inferenceBusy = false;
+  let middleThumbPinching = false;
+  let clearGestureCount = 0;
+  let lastClearGestureAt = 0;
 
   function resize() {
     const rect = stage.getBoundingClientRect();
@@ -278,6 +281,9 @@
     const hand = result.landmarks?.[0];
     if (!hand || hand.length < 21) {
       pinching = false;
+      middleThumbPinching = false;
+      clearGestureCount = 0;
+      lastClearGestureAt = 0;
       lastPoint = null;
       currentStroke = null;
       trackingStatus.textContent = '● 손 인식 대기';
@@ -308,8 +314,49 @@
       wrist3D.z - middleMcp3D.z
     ));
     const ratio = gap3D / palmScale3D;
-    // 손끝을 이전보다 더 가까이 모아야 그리기가 시작되도록 기준을 낮춥니다.
-    // 시작 기준 0.22, 해제 기준 0.32로 미세한 오인식을 줄입니다.
+
+    // 엄지와 중지 끝의 3D 거리로 전체 지우기 제스처를 감지합니다.
+    const middleTip3D = hand[12];
+    const middleGap3D = Math.hypot(
+      thumb3D.x - middleTip3D.x,
+      thumb3D.y - middleTip3D.y,
+      thumb3D.z - middleTip3D.z
+    );
+    const middleRatio = middleGap3D / palmScale3D;
+    const shouldMiddlePinch = middleThumbPinching
+      ? middleRatio < 0.36
+      : middleRatio < 0.25;
+    let middleGestureJustReleased = false;
+
+    if (shouldMiddlePinch && !middleThumbPinching) {
+      pinching = false;
+      lastPoint = null;
+      currentStroke = null;
+    } else if (!shouldMiddlePinch && middleThumbPinching) {
+      const now = performance.now();
+      clearGestureCount = now - lastClearGestureAt <= 2200
+        ? clearGestureCount + 1
+        : 1;
+      lastClearGestureAt = now;
+      middleGestureJustReleased = true;
+
+      if (clearGestureCount >= 2) {
+        strokes = [];
+        currentStroke = null;
+        lastPoint = null;
+        pinching = false;
+        clearGestureCount = 0;
+        lastClearGestureAt = 0;
+        redraw();
+        message.textContent = '전체 지우기 완료';
+        gestureStatus.textContent = '전체 지우기 완료 · 엄지와 중지를 두 번 모았다 놓음';
+      } else {
+        gestureStatus.textContent = '전체 지우기 제스처 1/2 · 한 번 더 반복하세요';
+      }
+    }
+    middleThumbPinching = shouldMiddlePinch;
+
+    // 기존 엄지-검지 그리기 기준은 유지합니다.
     const shouldPinch = pinching ? ratio < 0.32 : ratio < 0.22;
 
     octx.beginPath();
@@ -322,7 +369,14 @@
     drawTip(thumb, '#ff9f43', '엄지');
     drawTip(index, '#5795ff', '검지');
 
-    if (shouldPinch) {
+    if (middleThumbPinching || middleGestureJustReleased) {
+      pinching = false;
+      lastPoint = null;
+      currentStroke = null;
+      if (clearGestureCount === 0) {
+        gestureStatus.textContent = '엄지와 중지를 두 번 모았다 놓으면 전체 지우기';
+      }
+    } else if (shouldPinch) {
       if (!pinching) {
         currentStroke = { color: colorPicker.value, size: Number(sizePicker.value), points: [] };
         strokes.push(currentStroke);
