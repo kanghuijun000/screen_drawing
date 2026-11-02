@@ -291,11 +291,25 @@
 
     const thumb = points[4];
     const index = points[8];
-    const gap = Math.hypot(thumb.x - index.x, thumb.y - index.y);
-    const palmScale = Math.max(1, Math.hypot(points[0].x - points[9].x, points[0].y - points[9].y));
-    const ratio = gap / palmScale;
-    // 손 크기에 비례해 판정하므로 카메라와의 거리가 달라도 동작합니다.
-    const shouldPinch = pinching ? ratio < 0.52 : ratio < 0.38;
+    // 화면상 2D 거리만 사용하면 손을 눕혔을 때 두 손끝이 겹쳐 보이는 오작동이 생깁니다.
+    // MediaPipe의 깊이(z)를 포함한 3D 거리로 실제 손끝 간격을 추정합니다.
+    const thumb3D = hand[4];
+    const index3D = hand[8];
+    const wrist3D = hand[0];
+    const middleMcp3D = hand[9];
+    const gap3D = Math.hypot(
+      thumb3D.x - index3D.x,
+      thumb3D.y - index3D.y,
+      thumb3D.z - index3D.z
+    );
+    const palmScale3D = Math.max(0.001, Math.hypot(
+      wrist3D.x - middleMcp3D.x,
+      wrist3D.y - middleMcp3D.y,
+      wrist3D.z - middleMcp3D.z
+    ));
+    const ratio = gap3D / palmScale3D;
+    // 깊이까지 포함한 비율로 판정하고, 시작/해제 기준을 분리해 떨림을 방지합니다.
+    const shouldPinch = pinching ? ratio < 0.42 : ratio < 0.30;
 
     octx.beginPath();
     octx.moveTo(thumb.x, thumb.y);
