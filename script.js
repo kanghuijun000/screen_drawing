@@ -88,17 +88,17 @@
     message.textContent = '손 인식 AI 모델을 불러오는 중…';
     // 동적 import로 라이브러리 로딩 실패도 앱 내부 오류 메시지로 표시합니다.
     if (!visionApi) {
-      visionApi = await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.32');
+      visionApi = await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.32/vision_bundle.mjs');
     }
     const { FilesetResolver, HandLandmarker } = visionApi;
     const vision = await FilesetResolver.forVisionTasks(WASM_URL);
     const options = {
-      baseOptions: { modelAssetPath: MODEL_URL, delegate: 'GPU' },
+      baseOptions: { modelAssetPath: MODEL_URL },
       runningMode: 'VIDEO',
       numHands: 1,
-      minHandDetectionConfidence: 0.55,
-      minHandPresenceConfidence: 0.55,
-      minTrackingConfidence: 0.55
+      minHandDetectionConfidence: 0.35,
+      minHandPresenceConfidence: 0.35,
+      minTrackingConfidence: 0.35
     };
     try {
       landmarker = await HandLandmarker.createFromOptions(vision, options);
@@ -154,7 +154,7 @@
       placeholder.classList.add('hidden');
       switchBtn.disabled = false;
       cameraLabel.textContent = mirrored ? '전면 카메라' : '후면 카메라';
-      message.textContent = '손을 화면 안에 비춰보세요. 검지와 엄지 끝에 표시점이 붙어 움직입니다.';
+      message.textContent = '카메라 영상 ' + video.videoWidth + '×' + video.videoHeight + ' · 손 인식 중';
       running = true;
       lastVideoTime = -1;
       processFrame();
@@ -202,7 +202,7 @@
       currentStroke = null;
       trackingStatus.textContent = '● 손 인식 대기';
       trackingStatus.classList.remove('active');
-      gestureStatus.textContent = '손을 카메라 안에 보여주세요';
+      gestureStatus.textContent = '손을 화면 중앙에 보여주세요 (빛이 충분한 곳에서 손바닥을 카메라 쪽으로)';
       return;
     }
 
