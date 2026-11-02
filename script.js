@@ -401,7 +401,7 @@
       currentStroke = null;
       gestureStatus.textContent = '엄지와 검지를 모으면 그려집니다';
     }
-    pinching = shouldPinch;
+    pinching = (middleThumbPinching || middleGestureJustReleased) ? false : shouldPinch;
     trackingStatus.textContent = '● 손 관절 21개 추적 중';
     trackingStatus.classList.add('active');
     message.textContent = '손 인식 성공 · 엄지와 검지 끝을 모으면 그려집니다';
