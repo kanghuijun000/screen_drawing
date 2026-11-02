@@ -41,6 +41,7 @@
   let middleThumbPinching = false;
   let clearGestureCount = 0;
   let lastClearGestureAt = 0;
+  let pinchReleaseFrames = 0;
 
   function resize() {
     const rect = stage.getBoundingClientRect();
@@ -284,6 +285,7 @@
       middleThumbPinching = false;
       clearGestureCount = 0;
       lastClearGestureAt = 0;
+      pinchReleaseFrames = 0;
       lastPoint = null;
       currentStroke = null;
       trackingStatus.textContent = '● 손 인식 대기';
@@ -303,10 +305,11 @@
     const index3D = hand[8];
     const wrist3D = hand[0];
     const middleMcp3D = hand[9];
+    // Z축은 유지하되 영향력을 낮춰 깊이 추정의 미세한 흔들림에 덜 민감하게 합니다.
     const gap3D = Math.hypot(
       thumb3D.x - index3D.x,
       thumb3D.y - index3D.y,
-      thumb3D.z - index3D.z
+      (thumb3D.z - index3D.z) * 0.60
     );
     const palmScale3D = Math.max(0.001, Math.hypot(
       wrist3D.x - middleMcp3D.x,
@@ -320,12 +323,12 @@
     const middleGap3D = Math.hypot(
       thumb3D.x - middleTip3D.x,
       thumb3D.y - middleTip3D.y,
-      thumb3D.z - middleTip3D.z
+      (thumb3D.z - middleTip3D.z) * 0.45
     );
     const middleRatio = middleGap3D / palmScale3D;
     const shouldMiddlePinch = middleThumbPinching
-      ? middleRatio < 0.36
-      : middleRatio < 0.25;
+      ? middleRatio < 0.43
+      : middleRatio < 0.30;
     let middleGestureJustReleased = false;
 
     if (shouldMiddlePinch && !middleThumbPinching) {
@@ -334,7 +337,7 @@
       currentStroke = null;
     } else if (!shouldMiddlePinch && middleThumbPinching) {
       const now = performance.now();
-      clearGestureCount = now - lastClearGestureAt <= 2200
+      clearGestureCount = now - lastClearGestureAt <= 4000
         ? clearGestureCount + 1
         : 1;
       lastClearGestureAt = now;
@@ -356,8 +359,16 @@
     }
     middleThumbPinching = shouldMiddlePinch;
 
-    // 기존 엄지-검지 그리기 기준은 유지합니다.
-    const shouldPinch = pinching ? ratio < 0.32 : ratio < 0.22;
+    // 시작은 조금 수월하게, 해제는 3프레임 연속으로 멀어졌을 때만 처리합니다.
+    const pinchStart = 0.25;
+    const pinchRelease = 0.39;
+    let shouldPinch = pinching ? ratio < pinchRelease : ratio < pinchStart;
+    if (pinching && ratio >= pinchRelease) {
+      pinchReleaseFrames += 1;
+      if (pinchReleaseFrames < 3) shouldPinch = true;
+    } else {
+      pinchReleaseFrames = 0;
+    }
 
     octx.beginPath();
     octx.moveTo(thumb.x, thumb.y);
