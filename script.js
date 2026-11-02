@@ -308,8 +308,9 @@
       wrist3D.z - middleMcp3D.z
     ));
     const ratio = gap3D / palmScale3D;
-    // 깊이까지 포함한 비율로 판정하고, 시작/해제 기준을 분리해 떨림을 방지합니다.
-    const shouldPinch = pinching ? ratio < 0.42 : ratio < 0.30;
+    // 손끝을 이전보다 더 가까이 모아야 그리기가 시작되도록 기준을 낮춥니다.
+    // 시작 기준 0.22, 해제 기준 0.32로 미세한 오인식을 줄입니다.
+    const shouldPinch = pinching ? ratio < 0.32 : ratio < 0.22;
 
     octx.beginPath();
     octx.moveTo(thumb.x, thumb.y);
