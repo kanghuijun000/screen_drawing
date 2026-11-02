@@ -1,5 +1,3 @@
-import { FilesetResolver, HandLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
-
 (() => {
   const video = document.getElementById('video');
   const stage = document.getElementById('stage');
@@ -19,9 +17,10 @@ import { FilesetResolver, HandLandmarker } from "https://cdn.jsdelivr.net/npm/@m
   const undoBtn = document.getElementById('undoBtn');
   const clearBtn = document.getElementById('clearBtn');
 
-  const WASM_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm';
+  const WASM_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.32/wasm';
   const MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task';
   let landmarker = null;
+  let visionApi = null;
   let stream = null;
   let camera = 'user';
   let mirrored = true;
@@ -87,6 +86,11 @@ import { FilesetResolver, HandLandmarker } from "https://cdn.jsdelivr.net/npm/@m
   async function loadLandmarker() {
     if (landmarker) return landmarker;
     message.textContent = '손 인식 AI 모델을 불러오는 중…';
+    // 동적 import로 라이브러리 로딩 실패도 앱 내부 오류 메시지로 표시합니다.
+    if (!visionApi) {
+      visionApi = await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.32');
+    }
+    const { FilesetResolver, HandLandmarker } = visionApi;
     const vision = await FilesetResolver.forVisionTasks(WASM_URL);
     const options = {
       baseOptions: { modelAssetPath: MODEL_URL, delegate: 'GPU' },
