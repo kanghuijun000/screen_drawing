@@ -39,8 +39,8 @@
   let strokes = [];
   let inferenceBusy = false;
   let middleThumbPinching = false;
-  let clearGestureCount = 0;
-  let lastClearGestureAt = 0;
+  let middleHoldStartedAt = 0;
+  let middleClearTriggered = false;
   let pinchReleaseFrames = 0;
 
   function resize() {
@@ -283,8 +283,8 @@
     if (!hand || hand.length < 21) {
       pinching = false;
       middleThumbPinching = false;
-      clearGestureCount = 0;
-      lastClearGestureAt = 0;
+      middleHoldStartedAt = 0;
+      middleClearTriggered = false;
       pinchReleaseFrames = 0;
       lastPoint = null;
       currentStroke = null;
@@ -330,34 +330,34 @@
       ? middleRatio < 0.43
       : middleRatio < 0.30;
     let middleGestureJustReleased = false;
+    const now = performance.now();
 
     if (shouldMiddlePinch && !middleThumbPinching) {
+      middleHoldStartedAt = now;
+      middleClearTriggered = false;
       pinching = false;
       lastPoint = null;
       currentStroke = null;
     } else if (!shouldMiddlePinch && middleThumbPinching) {
-      const now = performance.now();
-      clearGestureCount = now - lastClearGestureAt <= 4000
-        ? clearGestureCount + 1
-        : 1;
-      lastClearGestureAt = now;
+      middleHoldStartedAt = 0;
+      middleClearTriggered = false;
       middleGestureJustReleased = true;
-
-      if (clearGestureCount >= 2) {
-        strokes = [];
-        currentStroke = null;
-        lastPoint = null;
-        pinching = false;
-        clearGestureCount = 0;
-        lastClearGestureAt = 0;
-        redraw();
-        message.textContent = '전체 지우기 완료';
-        gestureStatus.textContent = '전체 지우기 완료 · 엄지와 중지를 두 번 모았다 놓음';
-      } else {
-        gestureStatus.textContent = '전체 지우기 제스처 1/2 · 한 번 더 반복하세요';
-      }
     }
+
     middleThumbPinching = shouldMiddlePinch;
+
+    // 엄지와 중지를 붙인 상태로 2.5초 유지하면 한 번만 전체 지우기를 실행합니다.
+    if (middleThumbPinching && !middleClearTriggered &&
+        middleHoldStartedAt && now - middleHoldStartedAt >= 2500) {
+      strokes = [];
+      currentStroke = null;
+      lastPoint = null;
+      pinching = false;
+      middleClearTriggered = true;
+      redraw();
+      message.textContent = '전체 지우기 완료';
+      gestureStatus.textContent = '전체 지우기 완료 · 엄지와 중지를 2.5초간 유지';
+    }
 
     // 시작은 조금 수월하게, 해제는 3프레임 연속으로 멀어졌을 때만 처리합니다.
     const pinchStart = 0.25;
@@ -384,8 +384,11 @@
       pinching = false;
       lastPoint = null;
       currentStroke = null;
-      if (clearGestureCount === 0) {
-        gestureStatus.textContent = '엄지와 중지를 두 번 모았다 놓으면 전체 지우기';
+      if (middleThumbPinching && !middleClearTriggered) {
+        const heldSeconds = Math.min(2.5, (performance.now() - middleHoldStartedAt) / 1000);
+        gestureStatus.textContent = '전체 지우기까지 ' + (2.5 - heldSeconds).toFixed(1) + '초';
+      } else if (!middleClearTriggered) {
+        gestureStatus.textContent = '엄지와 검지를 모으면 그려집니다';
       }
     } else if (shouldPinch) {
       if (!pinching) {
