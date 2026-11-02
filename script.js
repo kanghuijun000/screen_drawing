@@ -6,7 +6,6 @@
   const ctx = drawCanvas.getContext('2d');
   const octx = overlayCanvas.getContext('2d');
   const startBtn = document.getElementById('startBtn');
-  const switchBtn = document.getElementById('switchBtn');
   const placeholder = document.getElementById('placeholder');
   const cameraLabel = document.getElementById('cameraLabel');
   const trackingStatus = document.getElementById('trackingStatus');
@@ -19,11 +18,18 @@
 
   const WASM_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.32/wasm';
   const MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task';
+  const HAND_CONNECTIONS = [
+    [0,1],[1,2],[2,3],[3,4],
+    [0,5],[5,6],[6,7],[7,8],
+    [5,9],[9,10],[10,11],[11,12],
+    [9,13],[13,14],[14,15],[15,16],
+    [13,17],[17,18],[18,19],[19,20],
+    [0,17]
+  ];
+
   let landmarker = null;
   let visionApi = null;
   let stream = null;
-  let camera = 'user';
-  let mirrored = true;
   let running = false;
   let rafId = 0;
   let lastVideoTime = -1;
@@ -67,7 +73,7 @@
     undoBtn.disabled = strokes.length === 0;
   }
 
-  // video의 object-fit:cover 크롭을 반영해 랜드마크와 손끝 점을 정확히 겹칩니다.
+  // object-fit: cover로 잘린 영상 영역까지 계산해 관절 위치와 화면을 일치시킵니다.
   function toStagePoint(landmark) {
     const rect = stage.getBoundingClientRect();
     const vw = video.videoWidth;
@@ -75,18 +81,15 @@
     const scale = Math.max(rect.width / vw, rect.height / vh);
     const shownW = vw * scale;
     const shownH = vh * scale;
-    const offsetX = (rect.width - shownW) / 2;
-    const offsetY = (rect.height - shownH) / 2;
     return {
-      x: landmark.x * shownW + offsetX,
-      y: landmark.y * shownH + offsetY
+      x: landmark.x * shownW + (rect.width - shownW) / 2,
+      y: landmark.y * shownH + (rect.height - shownH) / 2
     };
   }
 
   async function loadLandmarker() {
     if (landmarker) return landmarker;
-    message.textContent = '손 인식 AI 모델을 불러오는 중…';
-    // 동적 import로 라이브러리 로딩 실패도 앱 내부 오류 메시지로 표시합니다.
+    message.textContent = '손 관절 인식 AI 모델을 불러오는 중…';
     if (!visionApi) {
       visionApi = await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.32/vision_bundle.mjs');
     }
@@ -100,13 +103,7 @@
       minHandPresenceConfidence: 0.35,
       minTrackingConfidence: 0.35
     };
-    try {
-      landmarker = await HandLandmarker.createFromOptions(vision, options);
-    } catch (gpuError) {
-      console.warn('GPU 초기화 실패, CPU로 다시 시도합니다.', gpuError);
-      options.baseOptions.delegate = 'CPU';
-      landmarker = await HandLandmarker.createFromOptions(vision, options);
-    }
+    landmarker = await HandLandmarker.createFromOptions(vision, options);
     return landmarker;
   }
 
@@ -124,14 +121,14 @@
 
   async function startCamera() {
     startBtn.disabled = true;
-    message.textContent = '카메라와 손 인식 모델을 준비하는 중…';
+    message.textContent = '후면 카메라와 손 인식 모델을 준비하는 중…';
     try {
       stopCamera();
       await loadLandmarker();
       stream = await navigator.mediaDevices.getUserMedia({
         audio: false,
         video: {
-          facingMode: { ideal: camera },
+          facingMode: { exact: 'environment' },
           width: { ideal: 1280 },
           height: { ideal: 720 }
         }
@@ -146,15 +143,16 @@
       }
       const track = stream.getVideoTracks()[0];
       const actualFacing = track.getSettings().facingMode;
-      mirrored = actualFacing ? actualFacing !== 'environment' : camera === 'user';
-      video.style.transform = mirrored ? 'scaleX(-1)' : 'none';
-      drawCanvas.style.transform = mirrored ? 'scaleX(-1)' : 'none';
-      overlayCanvas.style.transform = mirrored ? 'scaleX(-1)' : 'none';
+      if (actualFacing && actualFacing !== 'environment') {
+        throw new Error('후면 카메라를 확인하지 못했습니다. 후면 카메라가 있는 기기에서 다시 시도해 주세요.');
+      }
+      video.style.transform = 'none';
+      drawCanvas.style.transform = 'none';
+      overlayCanvas.style.transform = 'none';
       resize();
       placeholder.classList.add('hidden');
-      switchBtn.disabled = false;
-      cameraLabel.textContent = mirrored ? '전면 카메라' : '후면 카메라';
-      message.textContent = '카메라 영상 ' + video.videoWidth + '×' + video.videoHeight + ' · 손 인식 중';
+      cameraLabel.textContent = '후면 카메라 연결됨';
+      message.textContent = '영상 ' + video.videoWidth + '×' + video.videoHeight + ' · 손 관절 추적 준비 완료';
       running = true;
       lastVideoTime = -1;
       processFrame();
@@ -162,11 +160,13 @@
       console.error(err);
       stopCamera();
       placeholder.classList.remove('hidden');
-      cameraLabel.textContent = '시작 오류';
+      cameraLabel.textContent = '후면 카메라 시작 오류';
       const detail = err?.message ? ' (' + err.message + ')' : '';
       message.textContent = err?.name === 'NotAllowedError'
         ? '카메라 권한을 허용해 주세요.'
-        : '카메라 또는 손 인식 모델을 시작하지 못했습니다. 인터넷 연결과 권한을 확인해 주세요.' + detail;
+        : err?.name === 'OverconstrainedError'
+          ? '후면 카메라를 찾지 못했습니다. 기기의 카메라 설정을 확인해 주세요.'
+          : '카메라 또는 손 인식 모델을 시작하지 못했습니다.' + detail;
     } finally {
       startBtn.disabled = false;
     }
@@ -192,6 +192,55 @@
     rafId = requestAnimationFrame(processFrame);
   }
 
+  function drawHandSkeleton(points) {
+    // 손목과 각 손가락의 21개 관절을 뼈대 선으로 연결합니다.
+    octx.lineCap = 'round';
+    octx.lineJoin = 'round';
+    octx.lineWidth = 3;
+    octx.strokeStyle = '#a9c4ff';
+    for (const [a, b] of HAND_CONNECTIONS) {
+      octx.beginPath();
+      octx.moveTo(points[a].x, points[a].y);
+      octx.lineTo(points[b].x, points[b].y);
+      octx.stroke();
+    }
+
+    // 엄지와 검지 끝을 제외한 관절은 작고 밝은 점으로 표시합니다.
+    for (let i = 0; i < points.length; i++) {
+      if (i === 4 || i === 8) continue;
+      const p = points[i];
+      octx.beginPath();
+      octx.arc(p.x, p.y, i === 0 ? 4.5 : 3.5, 0, Math.PI * 2);
+      octx.fillStyle = i === 0 ? '#ffffff' : '#c8d8ff';
+      octx.fill();
+      octx.lineWidth = 1.5;
+      octx.strokeStyle = '#25334e';
+      octx.stroke();
+    }
+  }
+
+  function drawTip(point, color, label) {
+    octx.save();
+    octx.shadowColor = color;
+    octx.shadowBlur = 15;
+    octx.beginPath();
+    octx.arc(point.x, point.y, 10, 0, Math.PI * 2);
+    octx.fillStyle = color;
+    octx.fill();
+    octx.shadowBlur = 0;
+    octx.lineWidth = 3;
+    octx.strokeStyle = '#ffffff';
+    octx.stroke();
+    octx.font = '700 12px system-ui, sans-serif';
+    octx.textAlign = 'center';
+    octx.lineWidth = 3;
+    octx.strokeStyle = '#10131b';
+    octx.strokeText(label, point.x, point.y - 18);
+    octx.fillStyle = '#ffffff';
+    octx.fillText(label, point.x, point.y - 18);
+    octx.restore();
+  }
+
   function onResults(result) {
     const rect = stage.getBoundingClientRect();
     octx.clearRect(0, 0, rect.width, rect.height);
@@ -202,57 +251,42 @@
       currentStroke = null;
       trackingStatus.textContent = '● 손 인식 대기';
       trackingStatus.classList.remove('active');
-      gestureStatus.textContent = '손을 화면 중앙에 보여주세요 (빛이 충분한 곳에서 손바닥을 카메라 쪽으로)';
+      gestureStatus.textContent = '손 전체를 카메라 화면 안에 보여주세요';
       return;
     }
 
-    // MediaPipe 21개 관절 중 4번은 엄지 끝, 8번은 검지 끝입니다.
-    const thumb = toStagePoint(hand[4]);
-    const index = toStagePoint(hand[8]);
-    const wrist = toStagePoint(hand[0]);
-    const middleBase = toStagePoint(hand[9]);
-    const gap = Math.hypot(thumb.x - index.x, thumb.y - index.y);
-    const palm = Math.max(1, Math.hypot(wrist.x - middleBase.x, wrist.y - middleBase.y));
-    const ratio = gap / palm;
-    const shouldPinch = pinching ? ratio < 0.48 : ratio < 0.34;
+    const points = hand.map(toStagePoint);
+    drawHandSkeleton(points);
 
-    // 엄지 끝은 주황색, 검지 끝은 파란색. 매 프레임 위치를 새로 계산해 손끝을 따라갑니다.
-    function fingertipDot(point, color, label) {
-      octx.beginPath();
-      octx.arc(point.x, point.y, 8, 0, Math.PI * 2);
-      octx.fillStyle = color;
-      octx.fill();
-      octx.lineWidth = 2.5;
-      octx.strokeStyle = '#ffffff';
-      octx.stroke();
-      octx.font = '600 11px system-ui, sans-serif';
-      octx.textAlign = 'center';
-      octx.fillStyle = '#ffffff';
-      octx.shadowColor = '#000000';
-      octx.shadowBlur = 4;
-      octx.fillText(label, point.x, point.y - 15);
-      octx.shadowBlur = 0;
-    }
-    fingertipDot(thumb, '#ff9f43', '엄지');
-    fingertipDot(index, '#6695ff', '검지');
+    const thumb = points[4];
+    const index = points[8];
+    const gap = Math.hypot(thumb.x - index.x, thumb.y - index.y);
+    const palmScale = Math.max(1, Math.hypot(points[0].x - points[9].x, points[0].y - points[9].y));
+    const ratio = gap / palmScale;
+    // 손 크기에 비례해 판정하므로 카메라와의 거리가 달라도 동작합니다.
+    const shouldPinch = pinching ? ratio < 0.52 : ratio < 0.38;
 
     octx.beginPath();
     octx.moveTo(thumb.x, thumb.y);
     octx.lineTo(index.x, index.y);
-    octx.strokeStyle = shouldPinch ? '#83e6b0' : '#ffffff80';
-    octx.lineWidth = 2;
+    octx.strokeStyle = shouldPinch ? '#83e6b0' : '#ffffff99';
+    octx.lineWidth = shouldPinch ? 3.5 : 2;
     octx.stroke();
+
+    drawTip(thumb, '#ff9f43', '엄지');
+    drawTip(index, '#5795ff', '검지');
 
     if (shouldPinch) {
       if (!pinching) {
         currentStroke = { color: colorPicker.value, size: Number(sizePicker.value), points: [] };
         strokes.push(currentStroke);
       }
+      // 손끝의 미세한 흔들림을 줄이면서 검지 끝을 따라 그립니다.
       const drawPoint = index;
       if (lastPoint) {
         const smooth = {
-          x: lastPoint.x * 0.35 + drawPoint.x * 0.65,
-          y: lastPoint.y * 0.35 + drawPoint.y * 0.65
+          x: lastPoint.x * 0.42 + drawPoint.x * 0.58,
+          y: lastPoint.y * 0.42 + drawPoint.y * 0.58
         };
         currentStroke.points.push(smooth);
         lastPoint = smooth;
@@ -261,22 +295,19 @@
         lastPoint = drawPoint;
       }
       redraw();
-      gestureStatus.textContent = '그리는 중 · 엄지와 검지 접촉';
+      gestureStatus.textContent = '그리는 중 · 엄지와 검지를 모음';
     } else {
       lastPoint = null;
       currentStroke = null;
       gestureStatus.textContent = '엄지와 검지를 모으면 그려집니다';
     }
     pinching = shouldPinch;
-    trackingStatus.textContent = '● 손 추적 중';
+    trackingStatus.textContent = '● 손 관절 21개 추적 중';
     trackingStatus.classList.add('active');
+    message.textContent = '손 인식 성공 · 엄지와 검지 끝을 모으면 그려집니다';
   }
 
   startBtn.addEventListener('click', startCamera);
-  switchBtn.addEventListener('click', async () => {
-    camera = camera === 'user' ? 'environment' : 'user';
-    await startCamera();
-  });
   undoBtn.addEventListener('click', () => {
     strokes.pop();
     redraw();
