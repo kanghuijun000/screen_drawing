@@ -14,7 +14,6 @@
   const colorPicker = document.getElementById('colorPicker');
   const sizePicker = document.getElementById('sizePicker');
   const undoBtn = document.getElementById('undoBtn');
-  const modeSwitchBtn = document.getElementById('modeSwitchBtn');
 
   const WASM_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.32/wasm';
   const MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task';
@@ -136,7 +135,6 @@
     pinching = false;
     lastPoint = null;
     currentStroke = null;
-    if (modeSwitchBtn) modeSwitchBtn.hidden = true;
   }
 
   async function startCamera() {
@@ -202,10 +200,6 @@
       message.textContent = '영상 ' + video.videoWidth + '×' + video.videoHeight + ' · 손 관절 추적 준비 완료';
       running = true;
       lastVideoTime = -1;
-      if (modeSwitchBtn) {
-        modeSwitchBtn.textContent = '3D 모드로 전환';
-        modeSwitchBtn.hidden = false;
-      }
       processFrame();
     } catch (err) {
       console.error(err);
@@ -474,12 +468,6 @@
     message.textContent = '손 인식 성공 · 엄지와 검지 끝을 모으면 그려집니다';
   }
 
-  window.ScreenDrawing2D = {
-    start: startCamera,
-    stop: stopCamera,
-    isRunning: () => running
-  };
-
   startBtn.addEventListener('click', startCamera);
   undoBtn.addEventListener('click', () => {
     if (!running) return;
@@ -497,6 +485,6 @@
     startBtn.disabled = true;
   }
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-    window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?v=28', { updateViaCache: 'none' }).then(registration => registration.update()).catch(console.warn));
+    window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?v=29', { updateViaCache: 'none' }).then(registration => registration.update()).catch(console.warn));
   }
 })();
