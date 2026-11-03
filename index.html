@@ -14,7 +14,7 @@
   <main class="app">
     <header class="topbar">
       <div class="brand"><span class="brand-mark">✳</span><div><strong>Screen Drawing</strong><small>손끝으로 그리는 공중 드로잉</small></div></div>
-      <span id="cameraLabel" class="camera-label">카메라 · AI 손 인식 준비 중</span><button id="arExitBtn" class="tool ar-exit" hidden>AR 종료</button>
+      <span id="cameraLabel" class="camera-label">카메라 · AI 손 인식 준비 중</span>
     </header>
     <section class="workspace">
       <div id="stage" class="stage">
@@ -24,8 +24,8 @@
         <div id="placeholder" class="placeholder">
           <div class="camera-symbol">◎</div>
           <strong>후면 카메라를 시작해 주세요</strong>
-          <span>2D 화면 드로잉 또는 실제 공간에 고정되는 3D AR 드로잉을 선택하세요.</span>
-          <div class="start-actions"><button id="startBtn" class="primary">2D 카메라 시작</button><button id="arStartBtn" class="primary ar-primary">3D AR 시작</button></div>
+          <span>후면 카메라를 켜고 손끝으로 화면 위에 그림을 그려보세요.</span>
+          <div class="start-actions"><button id="startBtn" class="primary">카메라 시작</button></div>
         </div>
         <div class="stage-hud"><span id="trackingStatus" class="status-dot">● 대기 중</span><span id="gestureStatus">손가락을 카메라에 보여주세요</span></div>
       </div>
@@ -35,14 +35,11 @@
           <label for="sizePicker">굵기</label><input id="sizePicker" type="range" min="2" max="22" value="6">
         </div>
         <button id="undoBtn" class="tool" disabled>↶ <span>실행 취소</span></button>
-        <button id="modeSwitchBtn" class="tool mode-switch" hidden>3D 모드로 전환</button>
-        <button id="drawModeBtn" class="tool draw-mode" hidden>자유 드로잉</button>
       </div>
     </section>
     <footer><span>엄지 + 검지 모으기 : 그리기</span><span>손가락 벌리기 : 멈춤</span></footer>
     <p id="message" class="message" role="status">손 인식 모델을 불러옵니다.</p>
   </main>
   <script src="script.js"></script>
-  <script src="ar.js"></script>
 </body>
 </html>
