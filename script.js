@@ -346,9 +346,9 @@
 
     middleThumbPinching = shouldMiddlePinch;
 
-    // 엄지와 중지를 붙인 상태로 2.5초 유지하면 한 번만 전체 지우기를 실행합니다.
+    // 엄지와 중지를 붙인 상태로 1초 유지하면 한 번만 전체 지우기를 실행합니다.
     if (middleThumbPinching && !middleClearTriggered &&
-        middleHoldStartedAt && now - middleHoldStartedAt >= 2500) {
+        middleHoldStartedAt && now - middleHoldStartedAt >= 1000) {
       strokes = [];
       currentStroke = null;
       lastPoint = null;
@@ -356,7 +356,7 @@
       middleClearTriggered = true;
       redraw();
       message.textContent = '전체 지우기 완료';
-      gestureStatus.textContent = '전체 지우기 완료 · 엄지와 중지를 2.5초간 유지';
+      gestureStatus.textContent = '전체 지우기 완료 · 엄지와 중지를 1초간 유지';
     }
 
     // 시작은 조금 수월하게, 해제는 3프레임 연속으로 멀어졌을 때만 처리합니다.
@@ -385,8 +385,8 @@
       lastPoint = null;
       currentStroke = null;
       if (middleThumbPinching && !middleClearTriggered) {
-        const heldSeconds = Math.min(2.5, (performance.now() - middleHoldStartedAt) / 1000);
-        gestureStatus.textContent = '전체 지우기까지 ' + (2.5 - heldSeconds).toFixed(1) + '초';
+        const heldSeconds = Math.min(1, (performance.now() - middleHoldStartedAt) / 1000);
+        gestureStatus.textContent = '전체 지우기까지 ' + (1 - heldSeconds).toFixed(1) + '초';
       } else if (!middleClearTriggered) {
         gestureStatus.textContent = '엄지와 검지를 모으면 그려집니다';
       }
