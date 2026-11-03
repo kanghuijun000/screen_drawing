@@ -8,3 +8,5 @@ body.ar-active .ar-hand-overlay{display:block}
 
 .mode-switch{border-color:#8da8ff;color:#cbd7ff;font-weight:700}
 .mode-switch[hidden]{display:none!important}
+
+.draw-mode{border-color:#72cdb0;color:#a9f0d8;font-weight:700}.draw-mode[hidden]{display:none!important}
