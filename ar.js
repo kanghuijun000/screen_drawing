@@ -16,7 +16,8 @@
 
   const WASM_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.32/wasm';
   const MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task';
-  const KNOWN_PALM_WIDTH = 0.085;
+  // MediaPipe world landmarks provide a per-frame hand scale in meters.
+  // This avoids assuming every user's palm is exactly the same physical width.
   const HAND_CONNECTIONS = [
     [0,1],[1,2],[2,3],[3,4],
     [0,5],[5,6],[6,7],[7,8],
@@ -40,7 +41,10 @@
   let middleHoldStartedAt = 0;
   let middleClearTriggered = false;
   let pinchReleaseFrames = 0;
-  let previousPinchRatio = null;
+  let pinchStartFrames = 0;
+  let filteredPinchRatio = null;
+  let depthFilter = { value: null, time: 0 };
+  let lastPointTime = 0;
   let drawMode = 'free';
   let lastDetectionAt = 0;
   let handOverlay = document.createElement('canvas');
@@ -199,17 +203,64 @@
     processHand(result, view, xrCamera.width, xrCamera.height);
   }
 
-  function cameraPointToWorld(landmark, hand, view, imageWidth, imageHeight) {
+  function distance3D(a, b) {
+    return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+  }
+
+  // Estimate camera-to-hand distance from several palm segments.
+  // The median makes the estimate less dependent on one poorly oriented segment.
+  function estimateHandDepth(hand, worldHand, view, imageWidth, imageHeight, timestamp) {
     const projection = view.projectionMatrix;
-    const palmDx = (hand[5].x - hand[17].x) * imageWidth;
-    const palmDy = (hand[5].y - hand[17].y) * imageHeight;
-    const palmPixels = Math.max(1, Math.hypot(palmDx, palmDy));
     const focalPixels = Math.abs(projection[0]) * imageWidth * 0.5;
-    const baseDepth = Math.max(0.15, Math.min(2.5, focalPixels * KNOWN_PALM_WIDTH / palmPixels));
-    const palmNorm = palmPixels / imageWidth;
-    const metersPerNorm = KNOWN_PALM_WIDTH / Math.max(0.001, palmNorm);
+    const pairs = [[5,17],[0,9],[0,5],[0,17],[5,9],[9,13],[13,17]];
+    const scales = [];
+
+    if (worldHand && worldHand.length >= 21) {
+      for (const [a, b] of pairs) {
+        const worldLength = distance3D(worldHand[a], worldHand[b]);
+        const pixelLength = Math.hypot(
+          (hand[a].x - hand[b].x) * imageWidth,
+          (hand[a].y - hand[b].y) * imageHeight
+        );
+        if (worldLength > 0.008 && pixelLength > 9) scales.push(worldLength / pixelLength);
+      }
+    }
+
+    scales.sort((a, b) => a - b);
+    let metersPerPixel;
+    if (scales.length >= 3) {
+      const middle = Math.floor(scales.length / 2);
+      metersPerPixel = scales.length % 2
+        ? scales[middle]
+        : (scales[middle - 1] + scales[middle]) * 0.5;
+    } else {
+      const palmPixels = Math.max(1, Math.hypot(
+        (hand[5].x - hand[17].x) * imageWidth,
+        (hand[5].y - hand[17].y) * imageHeight
+      ));
+      metersPerPixel = 0.085 / palmPixels;
+    }
+
+    const rawDepth = Math.max(0.15, Math.min(2.8, focalPixels * metersPerPixel));
+    const elapsed = depthFilter.time ? Math.max(0.001, (timestamp - depthFilter.time) / 1000) : 0.055;
+    if (depthFilter.value === null) {
+      depthFilter.value = rawDepth;
+    } else {
+      const speed = Math.abs(rawDepth - depthFilter.value) / elapsed;
+      const alpha = Math.max(0.24, Math.min(0.86, 0.24 + speed * 0.32));
+      depthFilter.value += (rawDepth - depthFilter.value) * alpha;
+    }
+    depthFilter.time = timestamp;
+    return { depth: depthFilter.value, focalPixels };
+  }
+
+  function cameraPointToWorld(landmark, hand, worldHand, view, imageWidth, imageHeight, timestamp) {
+    const projection = view.projectionMatrix;
+    const estimate = estimateHandDepth(hand, worldHand, view, imageWidth, imageHeight, timestamp);
+    const baseDepth = estimate.depth;
+    const metersPerNorm = baseDepth * imageWidth / Math.max(1, estimate.focalPixels);
     const relativeDepth = (landmark.z - hand[0].z) * metersPerNorm;
-    const depth = Math.max(0.15, Math.min(2.5, baseDepth + relativeDepth));
+    const depth = Math.max(0.15, Math.min(2.8, baseDepth + relativeDepth));
 
     const ndcX = landmark.x * 2 - 1;
     const ndcY = 1 - landmark.y * 2;
@@ -310,8 +361,11 @@
       middleHoldStartedAt = 0;
       middleClearTriggered = false;
       pinchReleaseFrames = 0;
-      previousPinchRatio = null;
+      pinchStartFrames = 0;
+      filteredPinchRatio = null;
+      depthFilter = { value: null, time: 0 };
       lastPoint = null;
+      lastPointTime = 0;
       currentStroke = null;
       trackingStatus.textContent = '● 손 인식 대기';
       trackingStatus.classList.remove('active');
@@ -360,23 +414,36 @@
       gestureStatus.textContent = '전체 지우기 완료 · 엄지와 중지를 1초간 유지';
     }
 
+    filteredPinchRatio = filteredPinchRatio === null
+      ? pinchRatio
+      : filteredPinchRatio * 0.42 + pinchRatio * 0.58;
     const startThreshold = 0.25;
     const releaseThreshold = 0.39;
-    const openingQuickly = pinching &&
-      previousPinchRatio !== null &&
-      pinchRatio > 0.255 &&
-      pinchRatio - previousPinchRatio >= 0.004;
-    let shouldPinch = pinching ? pinchRatio < releaseThreshold : pinchRatio < startThreshold;
-    if (openingQuickly) {
-      shouldPinch = false;
+    let shouldPinch = pinching;
+
+    if (!pinching) {
       pinchReleaseFrames = 0;
-    } else if (pinching && pinchRatio >= releaseThreshold) {
-      pinchReleaseFrames++;
-      if (pinchReleaseFrames < 3) shouldPinch = true;
+      if (filteredPinchRatio < startThreshold) {
+        pinchStartFrames++;
+        if (pinchStartFrames >= 2) {
+          shouldPinch = true;
+          pinchStartFrames = 0;
+        }
+      } else {
+        pinchStartFrames = 0;
+      }
     } else {
-      pinchReleaseFrames = 0;
+      pinchStartFrames = 0;
+      if (filteredPinchRatio >= releaseThreshold) {
+        pinchReleaseFrames++;
+        if (pinchReleaseFrames >= 2) {
+          shouldPinch = false;
+          pinchReleaseFrames = 0;
+        }
+      } else {
+        pinchReleaseFrames = 0;
+      }
     }
-    previousPinchRatio = pinchRatio;
 
     if (middlePinching || justReleasedMiddle) {
       pinching = false;
@@ -389,7 +456,8 @@
         gestureStatus.textContent = '엄지와 검지를 모으면 3D로 그려집니다';
       }
     } else if (shouldPinch) {
-      let worldPoint = cameraPointToWorld(index, hand, view, imageWidth, imageHeight);
+      const worldHand = result.worldLandmarks && result.worldLandmarks[0];
+      let worldPoint = cameraPointToWorld(index, hand, worldHand, view, imageWidth, imageHeight, now);
       if (!pinching) {
         const viewMatrix = view.transform.matrix;
         const cameraForward = normalize(-viewMatrix[8], -viewMatrix[9], -viewMatrix[10]);
@@ -407,27 +475,34 @@
           } : null
         };
         strokes.push(currentStroke);
+        undoBtn.disabled = false;
       }
       if (currentStroke?.drawMode === 'plane' && currentStroke.plane) {
         worldPoint = pointOnDrawingPlane(worldPoint, view, currentStroke.plane);
       }
-      if (!lastPoint || Math.hypot(
+      const elapsed = lastPointTime ? Math.max(0.001, (now - lastPointTime) / 1000) : 0.055;
+      const movement = lastPoint ? Math.hypot(
         worldPoint.x - lastPoint.x,
         worldPoint.y - lastPoint.y,
         worldPoint.z - lastPoint.z
-      ) > 0.0015) {
+      ) : Infinity;
+      if (!lastPoint || movement > 0.0012) {
+        const speed = Number.isFinite(movement) ? movement / elapsed : 0;
+        const follow = Math.max(0.42, Math.min(0.90, 0.42 + speed * 0.38));
         const smoothPoint = lastPoint ? {
-          x: lastPoint.x * 0.46 + worldPoint.x * 0.54,
-          y: lastPoint.y * 0.46 + worldPoint.y * 0.54,
-          z: lastPoint.z * 0.46 + worldPoint.z * 0.54,
+          x: lastPoint.x + (worldPoint.x - lastPoint.x) * follow,
+          y: lastPoint.y + (worldPoint.y - lastPoint.y) * follow,
+          z: lastPoint.z + (worldPoint.z - lastPoint.z) * follow,
           depth: worldPoint.depth
         } : worldPoint;
         currentStroke.points.push(smoothPoint);
         lastPoint = smoothPoint;
       }
+      lastPointTime = now;
       gestureStatus.textContent = '3D 공간에 그리는 중';
     } else {
       lastPoint = null;
+      lastPointTime = 0;
       currentStroke = null;
       gestureStatus.textContent = '엄지와 검지를 모으면 3D로 그려집니다';
     }
@@ -620,6 +695,11 @@
     referenceSpace = null;
     currentStroke = null;
     lastPoint = null;
+    lastPointTime = 0;
+    depthFilter = { value: null, time: 0 };
+    filteredPinchRatio = null;
+    pinchStartFrames = 0;
+    pinchReleaseFrames = 0;
     pinching = false;
     middlePinching = false;
     middleHoldStartedAt = 0;
