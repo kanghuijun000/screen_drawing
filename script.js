@@ -342,9 +342,12 @@
       (thumb3D.z - middleTip3D.z) * 0.45
     );
     const middleRatio = middleGap3D / palmScale3D;
-    const shouldMiddlePinch = middleThumbPinching
+    // 그림을 그리고 있는 동안에는 전체 지우기 제스처 자체를 감지하지 않습니다.
+    // 실수로 엄지와 중지가 가까워져도 현재 선을 끊거나 지우지 않도록 합니다.
+    const drawingInProgress = pinching || currentStroke !== null;
+    const shouldMiddlePinch = !drawingInProgress && (middleThumbPinching
       ? middleRatio < 0.43
-      : middleRatio < 0.30;
+      : middleRatio < 0.30);
     let middleGestureJustReleased = false;
     const now = performance.now();
 
@@ -485,6 +488,6 @@
     startBtn.disabled = true;
   }
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-    window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?v=30', { updateViaCache: 'none' }).then(registration => registration.update()).catch(console.warn));
+    window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?v=31', { updateViaCache: 'none' }).then(registration => registration.update()).catch(console.warn));
   }
 })();
