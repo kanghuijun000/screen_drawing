@@ -16,6 +16,14 @@
   const WASM_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.32/wasm';
   const MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task';
   const KNOWN_PALM_WIDTH = 0.085;
+  const HAND_CONNECTIONS = [
+    [0,1],[1,2],[2,3],[3,4],
+    [0,5],[5,6],[6,7],[7,8],
+    [5,9],[9,10],[10,11],[11,12],
+    [9,13],[13,14],[14,15],[15,16],
+    [13,17],[17,18],[18,19],[19,20],
+    [0,17]
+  ];
 
   let session = null;
   let gl = null;
@@ -31,7 +39,15 @@
   let middleHoldStartedAt = 0;
   let middleClearTriggered = false;
   let pinchReleaseFrames = 0;
+  let previousPinchRatio = null;
   let lastDetectionAt = 0;
+  let handOverlay = document.createElement('canvas');
+  let handOverlayContext = handOverlay.getContext('2d');
+  handOverlay.className = 'ar-hand-overlay';
+  document.body.appendChild(handOverlay);
+  let handOverlayWidth = 0;
+  let handOverlayHeight = 0;
+  let handOverlayDpr = 1;
   let cameraWidth = 0;
   let cameraHeight = 0;
   let cameraFramebuffer = null;
@@ -44,6 +60,7 @@
   let sourceContext = sourceCanvas.getContext('2d', { willReadFrequently: true });
   let cameraPixels = null;
   let flippedPixels = null;
+  let sourceImageData = null;
   let cameraMissingReported = false;
 
   function compileShader(type, source) {
@@ -73,7 +90,7 @@
 
   function setupGraphics() {
     const canvas = document.createElement('canvas');
-    gl = canvas.getContext('webgl2', { alpha: true, antialias: true, depth: true, stencil: false });
+    gl = canvas.getContext('webgl2', { alpha: true, antialias: false, depth: true, stencil: false });
     if (!gl) throw new Error('이 브라우저에서 WebGL 2를 사용할 수 없습니다.');
     return gl.makeXRCompatible().then(() => {
       cameraProgram = createProgram(
@@ -114,7 +131,7 @@
   }
 
   function prepareCameraBuffer(width, height) {
-    const targetWidth = Math.min(480, width);
+    const targetWidth = Math.min(360, width);
     const targetHeight = Math.max(1, Math.round(targetWidth * height / width));
     if (cameraWidth === targetWidth && cameraHeight === targetHeight && cameraPixels) return;
     cameraWidth = targetWidth;
@@ -123,6 +140,7 @@
     sourceCanvas.height = targetHeight;
     cameraPixels = new Uint8Array(targetWidth * targetHeight * 4);
     flippedPixels = new Uint8ClampedArray(targetWidth * targetHeight * 4);
+    sourceImageData = sourceContext.createImageData(targetWidth, targetHeight);
     gl.bindTexture(gl.TEXTURE_2D, cameraOutputTexture);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, targetWidth, targetHeight, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
     gl.bindFramebuffer(gl.FRAMEBUFFER, cameraFramebuffer);
@@ -165,9 +183,8 @@
       const to = y * rowBytes;
       flippedPixels.set(cameraPixels.subarray(from, from + rowBytes), to);
     }
-    const image = sourceContext.createImageData(cameraWidth, cameraHeight);
-    image.data.set(flippedPixels);
-    sourceContext.putImageData(image, 0, 0);
+    sourceImageData.data.set(flippedPixels);
+    sourceContext.putImageData(sourceImageData, 0, 0);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
     const result = landmarker.detectForVideo(sourceCanvas, timestamp);
@@ -200,14 +217,65 @@
     };
   }
 
+  function resizeHandOverlay() {
+    handOverlayDpr = Math.min(window.devicePixelRatio || 1, 2);
+    handOverlayWidth = window.innerWidth;
+    handOverlayHeight = window.innerHeight;
+    handOverlay.width = Math.round(handOverlayWidth * handOverlayDpr);
+    handOverlay.height = Math.round(handOverlayHeight * handOverlayDpr);
+    handOverlay.style.width = handOverlayWidth + 'px';
+    handOverlay.style.height = handOverlayHeight + 'px';
+    handOverlayContext.setTransform(handOverlayDpr, 0, 0, handOverlayDpr, 0, 0);
+  }
+
+  function drawHandOverlay(hand, imageWidth, imageHeight) {
+    handOverlayContext.clearRect(0, 0, handOverlayWidth, handOverlayHeight);
+    if (!hand || hand.length < 21) return;
+    const scale = Math.max(handOverlayWidth / imageWidth, handOverlayHeight / imageHeight);
+    const shownWidth = imageWidth * scale;
+    const shownHeight = imageHeight * scale;
+    const offsetX = (handOverlayWidth - shownWidth) * 0.5;
+    const offsetY = (handOverlayHeight - shownHeight) * 0.5;
+    const points = hand.map(point => ({
+      x: point.x * shownWidth + offsetX,
+      y: point.y * shownHeight + offsetY
+    }));
+
+    handOverlayContext.save();
+    handOverlayContext.lineCap = 'round';
+    handOverlayContext.lineJoin = 'round';
+    handOverlayContext.lineWidth = 3;
+    handOverlayContext.strokeStyle = '#a9c4ff';
+    for (const [a, b] of HAND_CONNECTIONS) {
+      handOverlayContext.beginPath();
+      handOverlayContext.moveTo(points[a].x, points[a].y);
+      handOverlayContext.lineTo(points[b].x, points[b].y);
+      handOverlayContext.stroke();
+    }
+    for (let i = 0; i < points.length; i++) {
+      const point = points[i];
+      const tip = i === 4 || i === 8 || i === 12;
+      handOverlayContext.beginPath();
+      handOverlayContext.arc(point.x, point.y, tip ? 7 : 4, 0, Math.PI * 2);
+      handOverlayContext.fillStyle = i === 4 ? '#ff9f43' : i === 8 ? '#5795ff' : tip ? '#83e6b0' : '#dce6ff';
+      handOverlayContext.fill();
+      handOverlayContext.lineWidth = 1.5;
+      handOverlayContext.strokeStyle = '#182238';
+      handOverlayContext.stroke();
+    }
+    handOverlayContext.restore();
+  }
+
   function processHand(result, view, imageWidth, imageHeight) {
     const hand = result.landmarks && result.landmarks[0];
     if (!hand || hand.length < 21) {
+      drawHandOverlay(null, imageWidth, imageHeight);
       pinching = false;
       middlePinching = false;
       middleHoldStartedAt = 0;
       middleClearTriggered = false;
       pinchReleaseFrames = 0;
+      previousPinchRatio = null;
       lastPoint = null;
       currentStroke = null;
       trackingStatus.textContent = '● 손 인식 대기';
@@ -259,13 +327,21 @@
 
     const startThreshold = 0.25;
     const releaseThreshold = 0.39;
+    const openingQuickly = pinching &&
+      previousPinchRatio !== null &&
+      pinchRatio > 0.255 &&
+      pinchRatio - previousPinchRatio >= 0.004;
     let shouldPinch = pinching ? pinchRatio < releaseThreshold : pinchRatio < startThreshold;
-    if (pinching && pinchRatio >= releaseThreshold) {
+    if (openingQuickly) {
+      shouldPinch = false;
+      pinchReleaseFrames = 0;
+    } else if (pinching && pinchRatio >= releaseThreshold) {
       pinchReleaseFrames++;
       if (pinchReleaseFrames < 3) shouldPinch = true;
     } else {
       pinchReleaseFrames = 0;
     }
+    previousPinchRatio = pinchRatio;
 
     if (middlePinching || justReleasedMiddle) {
       pinching = false;
@@ -283,7 +359,10 @@
         currentStroke = {
           color: colorPicker.value,
           size: Number(sizePicker.value),
-          points: []
+          points: [],
+          cachedVertices: null,
+          geometryPointCount: -1,
+          glBuffer: null
         };
         strokes.push(currentStroke);
       }
@@ -293,9 +372,9 @@
         worldPoint.z - lastPoint.z
       ) > 0.0015) {
         const smoothPoint = lastPoint ? {
-          x: lastPoint.x * 0.38 + worldPoint.x * 0.62,
-          y: lastPoint.y * 0.38 + worldPoint.y * 0.62,
-          z: lastPoint.z * 0.38 + worldPoint.z * 0.62,
+          x: lastPoint.x * 0.46 + worldPoint.x * 0.54,
+          y: lastPoint.y * 0.46 + worldPoint.y * 0.54,
+          z: lastPoint.z * 0.46 + worldPoint.z * 0.54,
           depth: worldPoint.depth
         } : worldPoint;
         currentStroke.points.push(smoothPoint);
@@ -309,6 +388,7 @@
     }
 
     pinching = (middlePinching || justReleasedMiddle) ? false : shouldPinch;
+    drawHandOverlay(hand, imageWidth, imageHeight);
     trackingStatus.textContent = '● 3D 손 추적 중';
     trackingStatus.classList.add('active');
   }
@@ -342,7 +422,9 @@
     ];
   }
 
-  function makeRibbon(stroke, cameraPosition, focalPixels) {
+  // 월드 좌표에서 한 번 만든 리본 형상을 재사용합니다.
+  // 카메라가 움직여도 선의 방향과 위치가 뒤집히지 않고 실제 공간에 고정됩니다.
+  function makeRibbon(stroke, focalPixels) {
     const vertices = [];
     for (let i = 1; i < stroke.points.length; i++) {
       const a = stroke.points[i - 1];
@@ -352,29 +434,12 @@
       const dz = b.z - a.z;
       if (Math.hypot(dx, dy, dz) < 0.0001) continue;
       const direction = normalize(dx, dy, dz);
-      const midX = (a.x + b.x) * 0.5;
-      const midY = (a.y + b.y) * 0.5;
-      const midZ = (a.z + b.z) * 0.5;
-      const toCamera = normalize(
-        cameraPosition.x - midX,
-        cameraPosition.y - midY,
-        cameraPosition.z - midZ
-      );
-      let side = normalize(
-        direction[1] * toCamera[2] - direction[2] * toCamera[1],
-        direction[2] * toCamera[0] - direction[0] * toCamera[2],
-        direction[0] * toCamera[1] - direction[1] * toCamera[0]
-      );
+      let side = normalize(-direction[2], 0, direction[0]);
       if (Math.hypot(side[0], side[1], side[2]) < 0.1) {
-        side = normalize(-direction[1], direction[0], 0);
-        if (Math.hypot(side[0], side[1], side[2]) < 0.1) side = [1, 0, 0];
+        side = normalize(0, direction[2], -direction[1]);
       }
-      const distance = Math.hypot(
-        cameraPosition.x - midX,
-        cameraPosition.y - midY,
-        cameraPosition.z - midZ
-      );
-      const halfWidth = Math.max(0.0004, stroke.size * distance / (2 * Math.max(1, focalPixels)));
+      const depth = Math.max(0.15, (a.depth + b.depth) * 0.5);
+      const halfWidth = Math.max(0.0005, stroke.size * depth / (2 * Math.max(1, focalPixels)));
       const sx = side[0] * halfWidth;
       const sy = side[1] * halfWidth;
       const sz = side[2] * halfWidth;
@@ -398,24 +463,28 @@
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     const viewMatrix = view.transform.inverse.matrix;
     const viewProjection = multiplyMatrices(view.projectionMatrix, viewMatrix);
-    const cameraPosition = view.transform.position;
     const focalPixels = Math.abs(view.projectionMatrix[0]) * viewport.width * 0.5;
 
     gl.useProgram(lineProgram);
     gl.uniformMatrix4fv(gl.getUniformLocation(lineProgram, 'uViewProjection'), false, viewProjection);
     const position = gl.getAttribLocation(lineProgram, 'aPosition');
-    gl.bindBuffer(gl.ARRAY_BUFFER, lineBuffer);
-    gl.enableVertexAttribArray(position);
-    gl.vertexAttribPointer(position, 3, gl.FLOAT, false, 0, 0);
 
     for (const stroke of strokes) {
       if (stroke.points.length < 2) continue;
-      const vertices = makeRibbon(stroke, cameraPosition, focalPixels);
-      if (!vertices.length) continue;
-      gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+      if (!stroke.glBuffer) stroke.glBuffer = gl.createBuffer();
+      if (stroke.geometryPointCount !== stroke.points.length) {
+        stroke.cachedVertices = makeRibbon(stroke, focalPixels);
+        stroke.geometryPointCount = stroke.points.length;
+        gl.bindBuffer(gl.ARRAY_BUFFER, stroke.glBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, stroke.cachedVertices, gl.STATIC_DRAW);
+      }
+      if (!stroke.cachedVertices || !stroke.cachedVertices.length) continue;
+      gl.bindBuffer(gl.ARRAY_BUFFER, stroke.glBuffer);
+      gl.enableVertexAttribArray(position);
+      gl.vertexAttribPointer(position, 3, gl.FLOAT, false, 0, 0);
       const color = hexColor(stroke.color);
       gl.uniform4f(gl.getUniformLocation(lineProgram, 'uColor'), color[0], color[1], color[2], color[3]);
-      gl.drawArrays(gl.TRIANGLES, 0, vertices.length / 3);
+      gl.drawArrays(gl.TRIANGLES, 0, stroke.cachedVertices.length / 3);
     }
   }
 
@@ -475,6 +544,7 @@
       gestureStatus.textContent = '손 인식 AI 모델을 불러오는 중…';
       message.textContent = 'AR 공간 추적 연결됨 · 손 인식 모델을 불러오는 중…';
       session.addEventListener('end', finishAR, { once: true });
+      resizeHandOverlay();
       session.requestAnimationFrame(onXRFrame);
       await loadHandModel();
       gestureStatus.textContent = '엄지와 검지를 모으면 3D로 그려집니다';
@@ -495,6 +565,7 @@
 
   function finishAR() {
     active = false;
+    handOverlayContext.clearRect(0, 0, handOverlayWidth, handOverlayHeight);
     session = null;
     binding = null;
     referenceSpace = null;
@@ -514,17 +585,24 @@
     if (undoBtn) undoBtn.disabled = strokes.length === 0;
   }
 
+  window.addEventListener('resize', () => {
+    if (active) resizeHandOverlay();
+  });
   arStartBtn.addEventListener('click', startAR);
   arExitBtn.addEventListener('click', () => {
     if (session) session.end();
   });
   undoBtn.addEventListener('click', () => {
     if (!active) return;
-    strokes.pop();
+    const removed = strokes.pop();
+    if (removed?.glBuffer && gl) gl.deleteBuffer(removed.glBuffer);
     undoBtn.disabled = strokes.length === 0;
   });
   clearBtn.addEventListener('click', () => {
     if (!active) return;
+    for (const stroke of strokes) {
+      if (stroke.glBuffer && gl) gl.deleteBuffer(stroke.glBuffer);
+    }
     strokes = [];
     currentStroke = null;
     lastPoint = null;
