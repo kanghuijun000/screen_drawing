@@ -1,5 +1,5 @@
-const CACHE='screen-drawing-v28';
-const CORE=['./','./index.html','./style.css','./script.js','./ar.js','./manifest.json','./icon.svg'];
+const CACHE='screen-drawing-v29';
+const CORE=['./','./index.html','./style.css','./script.js','./manifest.json','./icon.svg'];
 
 self.addEventListener('install',event=>{
   event.waitUntil(
