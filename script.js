@@ -70,9 +70,22 @@
       ctx.lineWidth = stroke.size;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
-      ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
-      for (let i = 1; i < stroke.points.length; i++) ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
-      if (stroke.points.length === 1) ctx.lineTo(stroke.points[0].x + 0.01, stroke.points[0].y + 0.01);
+      ctx.lineMiterLimit = 2;
+      const pts = stroke.points;
+      ctx.moveTo(pts[0].x, pts[0].y);
+      if (pts.length === 1) {
+        ctx.lineTo(pts[0].x + 0.01, pts[0].y + 0.01);
+      } else if (pts.length === 2) {
+        ctx.lineTo(pts[1].x, pts[1].y);
+      } else {
+        for (let i = 1; i < pts.length - 1; i++) {
+          const midX = (pts[i].x + pts[i + 1].x) * 0.5;
+          const midY = (pts[i].y + pts[i + 1].y) * 0.5;
+          ctx.quadraticCurveTo(pts[i].x, pts[i].y, midX, midY);
+        }
+        const last = pts[pts.length - 1];
+        ctx.lineTo(last.x, last.y);
+      }
       ctx.stroke();
     }
     undoBtn.disabled = strokes.length === 0;
@@ -414,12 +427,14 @@
         currentStroke = { color: colorPicker.value, size: Number(sizePicker.value), points: [] };
         strokes.push(currentStroke);
       }
-      // 손끝의 미세한 흔들림을 줄이면서 검지 끝을 따라 그립니다.
+      // 저속에서는 강하게 안정화하고, 빠르게 움직일 때는 추종성을 높이는 적응형 스무딩.
       const drawPoint = index;
       if (lastPoint) {
+        const distance = Math.hypot(drawPoint.x - lastPoint.x, drawPoint.y - lastPoint.y);
+        const follow = Math.max(0.24, Math.min(0.68, 0.24 + distance / 34));
         const smooth = {
-          x: lastPoint.x * 0.42 + drawPoint.x * 0.58,
-          y: lastPoint.y * 0.42 + drawPoint.y * 0.58
+          x: lastPoint.x + (drawPoint.x - lastPoint.x) * follow,
+          y: lastPoint.y + (drawPoint.y - lastPoint.y) * follow
         };
         currentStroke.points.push(smooth);
         lastPoint = smooth;
