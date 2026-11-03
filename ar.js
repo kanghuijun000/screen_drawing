@@ -445,8 +445,8 @@
     arStartBtn.disabled = true;
     message.textContent = 'AR 공간 추적을 준비하고 있습니다…';
     try {
-      if (!navigator.xr || !(await navigator.xr.isSessionSupported('immersive-ar'))) {
-        throw new Error('이 기기 또는 Chrome은 몰입형 AR을 지원하지 않습니다.');
+      if (!navigator.xr || typeof navigator.xr.requestSession !== 'function') {
+        throw new Error('이 브라우저는 WebXR AR을 지원하지 않습니다.');
       }
       const nextSession = await navigator.xr.requestSession('immersive-ar', {
         requiredFeatures: ['camera-access', 'dom-overlay'],
@@ -458,8 +458,11 @@
         baseLayer: new XRWebGLLayer(session, gl, { alpha: true, antialias: true, depth: true })
       });
       referenceSpace = await session.requestReferenceSpace('local');
+      if (typeof XRWebGLBinding === 'undefined') {
+        throw new Error('이 Chrome에서는 AR 카메라 영상 접근 기능을 사용할 수 없습니다.');
+      }
       binding = new XRWebGLBinding(session, gl);
-      if (typeof XRWebGLBinding === 'undefined' || typeof binding.getCameraImage !== 'function') {
+      if (typeof binding.getCameraImage !== 'function') {
         throw new Error('이 Chrome에서는 AR 카메라 영상 접근 기능을 사용할 수 없습니다.');
       }
       active = true;
