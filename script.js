@@ -42,7 +42,8 @@
   let middleHoldStartedAt = 0;
   let middleClearTriggered = false;
   let pinchReleaseFrames = 0;
-  let previousPinchRatio = null;
+  let pinchStartFrames = 0;
+  let filteredPinchRatio = null;
 
   function resize() {
     const rect = stage.getBoundingClientRect();
@@ -305,7 +306,8 @@
       middleHoldStartedAt = 0;
       middleClearTriggered = false;
       pinchReleaseFrames = 0;
-      previousPinchRatio = null;
+      pinchStartFrames = 0;
+      filteredPinchRatio = null;
       lastPoint = null;
       currentStroke = null;
       trackingStatus.textContent = '● 손 인식 대기';
@@ -356,6 +358,9 @@
       middleHoldStartedAt = now;
       middleClearTriggered = false;
       pinching = false;
+      pinchStartFrames = 0;
+      pinchReleaseFrames = 0;
+      filteredPinchRatio = null;
       lastPoint = null;
       currentStroke = null;
     } else if (!shouldMiddlePinch && middleThumbPinching) {
@@ -379,28 +384,39 @@
       gestureStatus.textContent = '전체 지우기 완료 · 엄지와 중지를 1초간 유지';
     }
 
-    // 시작은 조금 수월하게, 해제는 3프레임 연속으로 멀어졌을 때만 처리합니다.
+    // 거리값의 순간적인 튐을 완화하고, 시작/해제 기준을 분리한 히스테리시스.
+    // 아주 작은 변화에는 반응하지 않되, 손가락을 확실히 벌리면 빠르게 멈춥니다.
+    filteredPinchRatio = filteredPinchRatio === null
+      ? ratio
+      : filteredPinchRatio * 0.42 + ratio * 0.58;
+
     const pinchStart = 0.25;
     const pinchRelease = 0.39;
+    let shouldPinch = pinching;
 
-    // 손가락을 떼기 시작하는 순간의 벌어지는 움직임을 감지해,
-    // 해제 기준(0.39)에 도달하기 전이라도 선이 따라 그려지지 않게 합니다.
-    const openingQuickly = pinching &&
-      previousPinchRatio !== null &&
-      ratio > 0.255 &&
-      ratio - previousPinchRatio >= 0.004;
-
-    let shouldPinch = pinching ? ratio < pinchRelease : ratio < pinchStart;
-    if (openingQuickly) {
-      shouldPinch = false;
+    if (!pinching) {
       pinchReleaseFrames = 0;
-    } else if (pinching && ratio >= pinchRelease) {
-      pinchReleaseFrames += 1;
-      if (pinchReleaseFrames < 3) shouldPinch = true;
+      if (filteredPinchRatio < pinchStart) {
+        pinchStartFrames += 1;
+        if (pinchStartFrames >= 2) {
+          shouldPinch = true;
+          pinchStartFrames = 0;
+        }
+      } else {
+        pinchStartFrames = 0;
+      }
     } else {
-      pinchReleaseFrames = 0;
+      pinchStartFrames = 0;
+      if (filteredPinchRatio >= pinchRelease) {
+        pinchReleaseFrames += 1;
+        if (pinchReleaseFrames >= 2) {
+          shouldPinch = false;
+          pinchReleaseFrames = 0;
+        }
+      } else {
+        pinchReleaseFrames = 0;
+      }
     }
-    previousPinchRatio = ratio;
 
     octx.beginPath();
     octx.moveTo(thumb.x, thumb.y);
@@ -427,22 +443,25 @@
         currentStroke = { color: colorPicker.value, size: Number(sizePicker.value), points: [] };
         strokes.push(currentStroke);
       }
-      // 저속에서는 강하게 안정화하고, 빠르게 움직일 때는 추종성을 높이는 적응형 스무딩.
+      // 미세한 손떨림은 작은 데드존으로 걸러내고, 이동 속도에 따라 추종성을 조절합니다.
       const drawPoint = index;
       if (lastPoint) {
         const distance = Math.hypot(drawPoint.x - lastPoint.x, drawPoint.y - lastPoint.y);
-        const follow = Math.max(0.24, Math.min(0.68, 0.24 + distance / 34));
-        const smooth = {
-          x: lastPoint.x + (drawPoint.x - lastPoint.x) * follow,
-          y: lastPoint.y + (drawPoint.y - lastPoint.y) * follow
-        };
-        currentStroke.points.push(smooth);
-        lastPoint = smooth;
+        if (distance >= 0.65) {
+          const follow = Math.max(0.28, Math.min(0.78, 0.28 + distance / 38));
+          const smooth = {
+            x: lastPoint.x + (drawPoint.x - lastPoint.x) * follow,
+            y: lastPoint.y + (drawPoint.y - lastPoint.y) * follow
+          };
+          currentStroke.points.push(smooth);
+          lastPoint = smooth;
+          redraw();
+        }
       } else {
         currentStroke.points.push(drawPoint);
         lastPoint = drawPoint;
+        redraw();
       }
-      redraw();
       gestureStatus.textContent = '그리는 중 · 엄지와 검지를 모음';
     } else {
       lastPoint = null;
