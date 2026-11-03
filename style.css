@@ -5,3 +5,6 @@ body.ar-active{background:transparent;overflow:hidden}.ar-active .app{width:100%
 
 .ar-hand-overlay{display:none;position:fixed;inset:0;width:100vw;height:100dvh;pointer-events:none;z-index:14}
 body.ar-active .ar-hand-overlay{display:block}
+
+.mode-switch{border-color:#8da8ff;color:#cbd7ff;font-weight:700}
+.mode-switch[hidden]{display:none!important}
