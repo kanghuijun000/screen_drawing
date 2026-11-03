@@ -93,11 +93,6 @@
       gl.bindTexture(gl.TEXTURE_2D, cameraOutputTexture);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-      gl.bindFramebuffer(gl.FRAMEBUFFER, cameraFramebuffer);
-      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, cameraOutputTexture, 0);
-      if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
-        throw new Error('AR 카메라 영상 처리 버퍼를 만들지 못했습니다.');
-      }
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     });
   }
