@@ -395,7 +395,11 @@
       middleHoldStartedAt = now;
       middleClearTriggered = false;
       pinching = false;
+      pinchStartFrames = 0;
+      pinchReleaseFrames = 0;
+      filteredPinchRatio = null;
       lastPoint = null;
+      lastPointTime = 0;
       currentStroke = null;
     } else if (!shouldMiddlePinch && middlePinching) {
       middleHoldStartedAt = 0;
@@ -408,7 +412,9 @@
       strokes = [];
       currentStroke = null;
       lastPoint = null;
+      lastPointTime = 0;
       pinching = false;
+      undoBtn.disabled = true;
       middleClearTriggered = true;
       message.textContent = '3D 공간의 그림을 모두 지웠습니다.';
       gestureStatus.textContent = '전체 지우기 완료 · 엄지와 중지를 1초간 유지';
@@ -447,7 +453,11 @@
 
     if (middlePinching || justReleasedMiddle) {
       pinching = false;
+      pinchStartFrames = 0;
+      pinchReleaseFrames = 0;
+      filteredPinchRatio = null;
       lastPoint = null;
+      lastPointTime = 0;
       currentStroke = null;
       if (middlePinching && !middleClearTriggered) {
         const remaining = Math.max(0, 1 - (now - middleHoldStartedAt) / 1000);
