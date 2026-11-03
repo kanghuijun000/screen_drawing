@@ -42,6 +42,7 @@
   let middleHoldStartedAt = 0;
   let middleClearTriggered = false;
   let pinchReleaseFrames = 0;
+  let previousPinchRatio = null;
 
   function resize() {
     const rect = stage.getBoundingClientRect();
@@ -286,6 +287,7 @@
       middleHoldStartedAt = 0;
       middleClearTriggered = false;
       pinchReleaseFrames = 0;
+      previousPinchRatio = null;
       lastPoint = null;
       currentStroke = null;
       trackingStatus.textContent = '● 손 인식 대기';
@@ -362,13 +364,25 @@
     // 시작은 조금 수월하게, 해제는 3프레임 연속으로 멀어졌을 때만 처리합니다.
     const pinchStart = 0.25;
     const pinchRelease = 0.39;
+
+    // 손가락을 떼기 시작하는 순간의 벌어지는 움직임을 감지해,
+    // 해제 기준(0.39)에 도달하기 전이라도 선이 따라 그려지지 않게 합니다.
+    const openingQuickly = pinching &&
+      previousPinchRatio !== null &&
+      ratio > 0.275 &&
+      ratio - previousPinchRatio >= 0.010;
+
     let shouldPinch = pinching ? ratio < pinchRelease : ratio < pinchStart;
-    if (pinching && ratio >= pinchRelease) {
+    if (openingQuickly) {
+      shouldPinch = false;
+      pinchReleaseFrames = 0;
+    } else if (pinching && ratio >= pinchRelease) {
       pinchReleaseFrames += 1;
       if (pinchReleaseFrames < 3) shouldPinch = true;
     } else {
       pinchReleaseFrames = 0;
     }
+    previousPinchRatio = ratio;
 
     octx.beginPath();
     octx.moveTo(thumb.x, thumb.y);
