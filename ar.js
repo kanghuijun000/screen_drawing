@@ -367,6 +367,7 @@
       );
       if (Math.hypot(side[0], side[1], side[2]) < 0.1) {
         side = normalize(-direction[1], direction[0], 0);
+        if (Math.hypot(side[0], side[1], side[2]) < 0.1) side = [1, 0, 0];
       }
       const distance = Math.hypot(
         cameraPosition.x - midX,
@@ -453,7 +454,6 @@
       });
       session = nextSession;
       await setupGraphics();
-      await loadHandModel();
       session.updateRenderState({
         baseLayer: new XRWebGLLayer(session, gl, { alpha: true, antialias: true, depth: true })
       });
@@ -469,10 +469,13 @@
       arExitBtn.hidden = false;
       cameraLabel.textContent = '3D AR 공간 추적 중';
       trackingStatus.textContent = '● AR 공간 추적 중';
-      gestureStatus.textContent = '엄지와 검지를 모으면 3D로 그려집니다';
-      message.textContent = '손을 카메라에 가까이 또는 멀리 움직여 깊이를 바꿔보세요.';
+      gestureStatus.textContent = '손 인식 AI 모델을 불러오는 중…';
+      message.textContent = 'AR 공간 추적 연결됨 · 손 인식 모델을 불러오는 중…';
       session.addEventListener('end', finishAR, { once: true });
       session.requestAnimationFrame(onXRFrame);
+      await loadHandModel();
+      gestureStatus.textContent = '엄지와 검지를 모으면 3D로 그려집니다';
+      message.textContent = '손을 카메라에 가까이 또는 멀리 움직여 깊이를 바꿔보세요.';
     } catch (error) {
       console.error('3D AR 시작 실패:', error);
       if (session) {
