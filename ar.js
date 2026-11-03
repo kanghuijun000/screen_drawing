@@ -12,6 +12,7 @@
   const sizePicker = $('sizePicker');
   const undoBtn = $('undoBtn');
   const modeSwitchBtn = $('modeSwitchBtn');
+  const drawModeBtn = $('drawModeBtn');
 
   const WASM_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.32/wasm';
   const MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task';
@@ -40,6 +41,7 @@
   let middleClearTriggered = false;
   let pinchReleaseFrames = 0;
   let previousPinchRatio = null;
+  let drawMode = 'free';
   let lastDetectionAt = 0;
   let handOverlay = document.createElement('canvas');
   let handOverlayContext = handOverlay.getContext('2d');
@@ -223,6 +225,33 @@
     };
   }
 
+  // 평면 모드에서는 첫 그리기 지점의 깊이와 방향으로 고정된 작업 평면을 만든다.
+  // 이후 각 손끝 카메라 광선을 그 평면과 교차시켜 깊이 흔들림을 줄인다.
+  function pointOnDrawingPlane(worldPoint, view, plane) {
+    const matrix = view.transform.matrix;
+    const origin = [matrix[12], matrix[13], matrix[14]];
+    const direction = [
+      worldPoint.x - origin[0],
+      worldPoint.y - origin[1],
+      worldPoint.z - origin[2]
+    ];
+    const denominator = direction[0] * plane.normal[0] +
+      direction[1] * plane.normal[1] + direction[2] * plane.normal[2];
+    if (Math.abs(denominator) < 1e-5) return worldPoint;
+    const numerator =
+      (plane.point[0] - origin[0]) * plane.normal[0] +
+      (plane.point[1] - origin[1]) * plane.normal[1] +
+      (plane.point[2] - origin[2]) * plane.normal[2];
+    const t = numerator / denominator;
+    if (!Number.isFinite(t) || t <= 0) return worldPoint;
+    return {
+      x: origin[0] + direction[0] * t,
+      y: origin[1] + direction[1] * t,
+      z: origin[2] + direction[2] * t,
+      depth: worldPoint.depth
+    };
+  }
+
   function resizeHandOverlay() {
     handOverlayDpr = Math.min(window.devicePixelRatio || 1, 2);
     handOverlayWidth = window.innerWidth;
@@ -360,17 +389,27 @@
         gestureStatus.textContent = '엄지와 검지를 모으면 3D로 그려집니다';
       }
     } else if (shouldPinch) {
-      const worldPoint = cameraPointToWorld(index, hand, view, imageWidth, imageHeight);
+      let worldPoint = cameraPointToWorld(index, hand, view, imageWidth, imageHeight);
       if (!pinching) {
+        const viewMatrix = view.transform.matrix;
+        const cameraForward = normalize(-viewMatrix[8], -viewMatrix[9], -viewMatrix[10]);
         currentStroke = {
           color: colorPicker.value,
           size: Number(sizePicker.value),
           points: [],
           cachedVertices: null,
           geometryPointCount: -1,
-          glBuffer: null
+          glBuffer: null,
+          drawMode,
+          plane: drawMode === 'plane' ? {
+            point: [worldPoint.x, worldPoint.y, worldPoint.z],
+            normal: cameraForward
+          } : null
         };
         strokes.push(currentStroke);
+      }
+      if (currentStroke?.drawMode === 'plane' && currentStroke.plane) {
+        worldPoint = pointOnDrawingPlane(worldPoint, view, currentStroke.plane);
       }
       if (!lastPoint || Math.hypot(
         worldPoint.x - lastPoint.x,
@@ -546,6 +585,8 @@
       document.body.classList.add('ar-active');
       arExitBtn.hidden = false;
       modeSwitchBtn.textContent = '2D 모드로 전환';
+      drawModeBtn.hidden = false;
+      drawModeBtn.textContent = drawMode === 'free' ? '자유 드로잉' : '평면 드로잉';
       modeSwitchBtn.hidden = false;
       cameraLabel.textContent = '3D AR 공간 추적 중';
       trackingStatus.textContent = '● AR 공간 추적 중';
@@ -586,6 +627,7 @@
     document.body.classList.remove('ar-active');
     arExitBtn.hidden = true;
     modeSwitchBtn.hidden = true;
+    drawModeBtn.hidden = true;
     placeholder.classList.remove('hidden');
     cameraLabel.textContent = '후면 카메라 · AI 손 인식 준비 중';
     trackingStatus.textContent = '● 대기 중';
@@ -598,6 +640,17 @@
     if (active) resizeHandOverlay();
   });
   arStartBtn.addEventListener('click', startAR);
+  drawModeBtn.addEventListener('click', () => {
+    if (!active) return;
+    drawMode = drawMode === 'free' ? 'plane' : 'free';
+    drawModeBtn.textContent = drawMode === 'free' ? '자유 드로잉' : '평면 드로잉';
+    message.textContent = drawMode === 'free'
+      ? '자유 드로잉 · 손끝의 깊이 움직임까지 반영합니다.'
+      : '평면 드로잉 · 새 선을 시작할 때 작업 평면이 고정됩니다.';
+    gestureStatus.textContent = drawMode === 'free'
+      ? '자유 공간에서 그릴 수 있습니다'
+      : '새 선은 시작한 깊이의 평면에 고정됩니다';
+  });
   modeSwitchBtn.addEventListener('click', () => {
     if (active && session) {
       const endingSession = session;
