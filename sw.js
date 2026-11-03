@@ -1,4 +1,4 @@
-const CACHE='screen-drawing-v27';
+const CACHE='screen-drawing-v28';
 const CORE=['./','./index.html','./style.css','./script.js','./ar.js','./manifest.json','./icon.svg'];
 
 self.addEventListener('install',event=>{
