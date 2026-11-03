@@ -623,5 +623,5 @@
     if (removed?.glBuffer && gl) gl.deleteBuffer(removed.glBuffer);
     undoBtn.disabled = strokes.length === 0;
   });
-remove AR clear handler
+
 })();
