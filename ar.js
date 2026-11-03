@@ -11,7 +11,7 @@
   const colorPicker = $('colorPicker');
   const sizePicker = $('sizePicker');
   const undoBtn = $('undoBtn');
-  const clearBtn = $('clearBtn');
+  const modeSwitchBtn = $('modeSwitchBtn');
 
   const WASM_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.32/wasm';
   const MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task';
@@ -545,6 +545,8 @@
       placeholder.classList.add('hidden');
       document.body.classList.add('ar-active');
       arExitBtn.hidden = false;
+      modeSwitchBtn.textContent = '2D 모드로 전환';
+      modeSwitchBtn.hidden = false;
       cameraLabel.textContent = '3D AR 공간 추적 중';
       trackingStatus.textContent = '● AR 공간 추적 중';
       gestureStatus.textContent = '손 인식 AI 모델을 불러오는 중…';
@@ -583,6 +585,7 @@
     middleClearTriggered = false;
     document.body.classList.remove('ar-active');
     arExitBtn.hidden = true;
+    modeSwitchBtn.hidden = true;
     placeholder.classList.remove('hidden');
     cameraLabel.textContent = '후면 카메라 · AI 손 인식 준비 중';
     trackingStatus.textContent = '● 대기 중';
@@ -595,6 +598,22 @@
     if (active) resizeHandOverlay();
   });
   arStartBtn.addEventListener('click', startAR);
+  modeSwitchBtn.addEventListener('click', () => {
+    if (active && session) {
+      const endingSession = session;
+      endingSession.end().then(() => {
+        window.ScreenDrawing2D?.start();
+      }).catch(error => {
+        console.error('AR 종료 실패:', error);
+        message.textContent = '3D 모드를 종료하지 못했습니다. 다시 시도해 주세요.';
+      });
+      return;
+    }
+    if (window.ScreenDrawing2D?.isRunning()) {
+      window.ScreenDrawing2D.stop();
+      startAR();
+    }
+  });
   arExitBtn.addEventListener('click', () => {
     if (session) session.end();
   });
@@ -604,15 +623,5 @@
     if (removed?.glBuffer && gl) gl.deleteBuffer(removed.glBuffer);
     undoBtn.disabled = strokes.length === 0;
   });
-  clearBtn.addEventListener('click', () => {
-    if (!active) return;
-    for (const stroke of strokes) {
-      if (stroke.glBuffer && gl) gl.deleteBuffer(stroke.glBuffer);
-    }
-    strokes = [];
-    currentStroke = null;
-    lastPoint = null;
-    undoBtn.disabled = true;
-    message.textContent = '3D 공간의 그림을 모두 지웠습니다.';
-  });
+remove AR clear handler
 })();
