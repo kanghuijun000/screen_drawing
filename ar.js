@@ -92,6 +92,12 @@
     const canvas = document.createElement('canvas');
     gl = canvas.getContext('webgl2', { alpha: true, antialias: false, depth: true, stencil: false });
     if (!gl) throw new Error('이 브라우저에서 WebGL 2를 사용할 수 없습니다.');
+    // AR 재시작 시 새 WebGL 컨텍스트를 사용하므로 이전 컨텍스트의 버퍼 캐시를 폐기합니다.
+    for (const stroke of strokes) {
+      stroke.glBuffer = null;
+      stroke.geometryPointCount = -1;
+      stroke.cachedVertices = null;
+    }
     return gl.makeXRCompatible().then(() => {
       cameraProgram = createProgram(
         '#version 300 es\nin vec2 aPosition;\nout vec2 vUv;\nvoid main(){vUv=(aPosition+1.0)*0.5;gl_Position=vec4(aPosition,0.0,1.0);}',
