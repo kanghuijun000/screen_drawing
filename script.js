@@ -369,8 +369,8 @@
     // 해제 기준(0.39)에 도달하기 전이라도 선이 따라 그려지지 않게 합니다.
     const openingQuickly = pinching &&
       previousPinchRatio !== null &&
-      ratio > 0.275 &&
-      ratio - previousPinchRatio >= 0.010;
+      ratio > 0.255 &&
+      ratio - previousPinchRatio >= 0.004;
 
     let shouldPinch = pinching ? ratio < pinchRelease : ratio < pinchStart;
     if (openingQuickly) {
