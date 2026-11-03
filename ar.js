@@ -464,13 +464,14 @@
       });
       referenceSpace = await session.requestReferenceSpace('local');
       binding = new XRWebGLBinding(session, gl);
-      if (!('camera' in XRView.prototype) || !binding.getCameraImage) {
+      if (typeof XRWebGLBinding === 'undefined' || typeof binding.getCameraImage !== 'function') {
         throw new Error('이 Chrome에서는 AR 카메라 영상 접근 기능을 사용할 수 없습니다.');
       }
       active = true;
       cameraMissingReported = false;
       placeholder.classList.add('hidden');
       document.body.classList.add('ar-active');
+      arExitBtn.hidden = false;
       cameraLabel.textContent = '3D AR 공간 추적 중';
       trackingStatus.textContent = '● AR 공간 추적 중';
       gestureStatus.textContent = '엄지와 검지를 모으면 3D로 그려집니다';
@@ -503,6 +504,7 @@
     middleHoldStartedAt = 0;
     middleClearTriggered = false;
     document.body.classList.remove('ar-active');
+    arExitBtn.hidden = true;
     placeholder.classList.remove('hidden');
     cameraLabel.textContent = '후면 카메라 · AI 손 인식 준비 중';
     trackingStatus.textContent = '● 대기 중';
