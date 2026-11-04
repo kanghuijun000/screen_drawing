@@ -388,7 +388,7 @@
       : filteredPinchRatio * 0.42 + ratio * 0.58;
 
     const pinchStart = 0.25;
-    const pinchRelease = 0.39;
+    const pinchRelease = 0.34;
     let shouldPinch = pinching;
 
     if (!pinching) {
@@ -404,12 +404,11 @@
       }
     } else {
       pinchStartFrames = 0;
-      if (filteredPinchRatio >= pinchRelease) {
-        pinchReleaseFrames += 1;
-        if (pinchReleaseFrames >= 2) {
-          shouldPinch = false;
-          pinchReleaseFrames = 0;
-        }
+      // 손가락을 벌릴 때는 필터링된 값이나 추가 프레임을 기다리지 않고
+      // 실제 간격이 해제 기준을 넘는 즉시 그리기를 끝냅니다.
+      if (ratio >= pinchRelease) {
+        shouldPinch = false;
+        pinchReleaseFrames = 0;
       } else {
         pinchReleaseFrames = 0;
       }
