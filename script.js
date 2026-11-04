@@ -43,6 +43,7 @@
   let pinchReleaseFrames = 0;
   let pinchStartFrames = 0;
   let filteredPinchRatio = null;
+  let previousPinchRatio = null;
 
   function resize() {
     const rect = stage.getBoundingClientRect();
@@ -302,6 +303,7 @@
       pinchReleaseFrames = 0;
       pinchStartFrames = 0;
       filteredPinchRatio = null;
+      previousPinchRatio = null;
       lastPoint = null;
       currentStroke = null;
       trackingStatus.textContent = '● 손 인식 대기';
@@ -333,6 +335,8 @@
       wrist3D.z - middleMcp3D.z
     ));
     const ratio = gap3D / palmScale3D;
+    const ratioIncrease = previousPinchRatio === null ? 0 : ratio - previousPinchRatio;
+    previousPinchRatio = ratio;
 
     // 엄지와 중지 끝의 3D 거리로 전체 지우기 제스처를 감지합니다.
     const middleTip3D = hand[12];
@@ -388,7 +392,8 @@
       : filteredPinchRatio * 0.42 + ratio * 0.58;
 
     const pinchStart = 0.25;
-    const pinchRelease = 0.34;
+    const pinchRelease = 0.29;
+    const rapidOpening = pinching && ratioIncrease >= 0.012;
     let shouldPinch = pinching;
 
     if (!pinching) {
@@ -406,7 +411,9 @@
       pinchStartFrames = 0;
       // 손가락을 벌릴 때는 필터링된 값이나 추가 프레임을 기다리지 않고
       // 실제 간격이 해제 기준을 넘는 즉시 그리기를 끝냅니다.
-      if (ratio >= pinchRelease) {
+      if (ratio >= pinchRelease || rapidOpening) {
+        // 간격이 커지기 시작하는 빠른 동작도 해제로 처리해
+        // 손가락이 벌어지는 이동 궤적이 선으로 남지 않게 합니다.
         shouldPinch = false;
         pinchReleaseFrames = 0;
       } else {
