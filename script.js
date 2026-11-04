@@ -487,6 +487,6 @@
     startBtn.disabled = true;
   }
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-    window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?v=31', { updateViaCache: 'none' }).then(registration => registration.update()).catch(console.warn));
+    window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?v=32', { updateViaCache: 'none' }).then(registration => registration.update()).catch(console.warn));
   }
 })();
